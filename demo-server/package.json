@@ -1,0 +1,14 @@
+{
+  "name": "klv-display-demo",
+  "version": "1.0.0",
+  "description": "KLV Display Demo Server - Pre-encoded video streaming",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.16.0"
+  }
+}

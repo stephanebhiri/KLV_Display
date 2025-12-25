@@ -1,0 +1,65 @@
+import { useState } from 'react';
+// eslint-disable-next-line no-unused-vars
+import { VideoPlayer } from './components/VideoPlayer';
+import { Map } from './components/Map';
+import { InfoPanel } from './components/InfoPanel';
+import { SimulatorPanel } from './components/SimulatorPanel';
+import { useWebSocket } from './hooks/useWebSocket';
+import './App.css';
+
+function App() {
+  const { isConnected, klvData, sensors, status, hlsUrl, webrtcStream, startUDP, stopStream } = useWebSocket();
+  const [udpPort, setUdpPort] = useState('5000');
+
+  return (
+    <div className="app">
+      <header className="app-header">
+        <h1>STANAG 4609 Viewer</h1>
+        <div className="controls">
+          {!status.streaming ? (
+            <>
+              <input
+                type="number"
+                value={udpPort}
+                onChange={(e) => setUdpPort(e.target.value)}
+                className="port-input"
+                placeholder="5000"
+              />
+              <button onClick={() => startUDP(parseInt(udpPort))} disabled={!isConnected} className="live">
+                Live UDP
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="source-info">
+                UDP IN :{status.source?.split(':').pop()} → WebRTC
+              </span>
+              {webrtcStream && <span className="rtc-badge">RTC</span>}
+              <button onClick={stopStream} className="stop">
+                Stop
+              </button>
+            </>
+          )}
+        </div>
+      </header>
+
+      <main className="app-main">
+        <div className="left-panel">
+          <VideoPlayer src={hlsUrl} webrtcStream={webrtcStream} />
+          <Map klvData={klvData} sensors={sensors} />
+        </div>
+        <div className="right-panel">
+          <InfoPanel
+            klvData={klvData}
+            sensors={sensors}
+            status={status}
+            isConnected={isConnected}
+          />
+          <SimulatorPanel port={parseInt(udpPort) || 5000} />
+        </div>
+      </main>
+    </div>
+  );
+}
+
+export default App;

@@ -1,0 +1,19 @@
+node_modules/
+samples/
+hls/
+.simulator.pid
+*.log
+.DS_Store
+.venv/
+
+# Debug/analysis files
+ARCHITECTURE_VIDEO.md
+EC2_RESUME.md
+PROJECT_BRIEF.md
+graph_*.png
+udp_*.csv
+falls_klv.bin
+*.tar.gz
+
+# Demo assets (too large for git)
+demo-assets/*/video.*

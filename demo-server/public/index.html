@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KLV Display - Demo</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0a;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 350px;
+      grid-template-rows: auto 1fr;
+      gap: 16px;
+      padding: 16px;
+      max-width: 1600px;
+      margin: 0 auto;
+      height: 100vh;
+    }
+    header {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      padding: 8px 0;
+      border-bottom: 1px solid #333;
+    }
+    h1 {
+      font-size: 1.5rem;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .demo-badge {
+      background: #ff6b6b;
+      color: white;
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: bold;
+    }
+    .demo-selector {
+      display: flex;
+      gap: 8px;
+      margin-left: auto;
+    }
+    .demo-btn {
+      background: #1a1a2e;
+      border: 1px solid #333;
+      color: #e0e0e0;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .demo-btn:hover { background: #2a2a4e; }
+    .demo-btn.active {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-color: transparent;
+    }
+    .main-content {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .video-container {
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      position: relative;
+      aspect-ratio: 4/3;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .video-overlay {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      display: flex;
+      gap: 8px;
+    }
+    .status-pill {
+      background: rgba(0,0,0,0.7);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #4ade80;
+    }
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .panel {
+      background: #1a1a2e;
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .panel-title {
+      font-size: 0.875rem;
+      color: #888;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    #map {
+      height: 250px;
+      border-radius: 8px;
+    }
+    .klv-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .klv-item {
+      background: #0a0a1a;
+      padding: 8px 12px;
+      border-radius: 6px;
+    }
+    .klv-label {
+      font-size: 0.7rem;
+      color: #666;
+      text-transform: uppercase;
+    }
+    .klv-value {
+      font-size: 0.95rem;
+      font-family: 'SF Mono', monospace;
+      color: #4ade80;
+    }
+    .github-link {
+      color: #888;
+      text-decoration: none;
+      font-size: 0.875rem;
+    }
+    .github-link:hover { color: #e0e0e0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>KLV Display</h1>
+      <span class="demo-badge">DEMO</span>
+      <div class="demo-selector" id="demoSelector"></div>
+      <a href="https://github.com/stephanebhiri/KLV_Display" class="github-link" target="_blank">
+        View on GitHub →
+      </a>
+    </header>
+
+    <div class="main-content">
+      <div class="video-container">
+        <video id="videoPlayer" controls></video>
+        <div class="video-overlay">
+          <div class="status-pill">
+            <span class="status-dot"></span>
+            <span id="statusText">Ready</span>
+          </div>
+          <div class="status-pill" id="klvCounter">KLV: 0/0</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <div class="panel">
+        <div class="panel-title">Position</div>
+        <div id="map"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Telemetry</div>
+        <div class="klv-grid" id="klvData">
+          <div class="klv-item"><div class="klv-label">Latitude</div><div class="klv-value" id="lat">--</div></div>
+          <div class="klv-item"><div class="klv-label">Longitude</div><div class="klv-value" id="lon">--</div></div>
+          <div class="klv-item"><div class="klv-label">Altitude</div><div class="klv-value" id="alt">--</div></div>
+          <div class="klv-item"><div class="klv-label">Heading</div><div class="klv-value" id="heading">--</div></div>
+          <div class="klv-item"><div class="klv-label">Pitch</div><div class="klv-value" id="pitch">--</div></div>
+          <div class="klv-item"><div class="klv-label">Roll</div><div class="klv-value" id="roll">--</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // State
+    let ws = null;
+    let map = null;
+    let marker = null;
+    let currentDemo = null;
+    let klvPackets = [];
+    let klvIndex = 0;
+
+    // Initialize map
+    function initMap() {
+      map = L.map('map').setView([39.5, -98.35], 4);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+      }).addTo(map);
+    }
+
+    // Update map marker
+    function updateMap(lat, lon) {
+      if (!map) return;
+      if (!marker) {
+        marker = L.marker([lat, lon]).addTo(map);
+      } else {
+        marker.setLatLng([lat, lon]);
+      }
+      map.setView([lat, lon], 12);
+    }
+
+    // Format number
+    function fmt(val, decimals = 2) {
+      return val !== undefined ? val.toFixed(decimals) : '--';
+    }
+
+    // Update KLV display
+    function updateKLV(data) {
+      document.getElementById('lat').textContent = fmt(data.sensorLatitude || data.frameCenterLat, 6);
+      document.getElementById('lon').textContent = fmt(data.sensorLongitude || data.frameCenterLon, 6);
+      document.getElementById('alt').textContent = fmt(data.sensorAltitude, 0) + ' m';
+      document.getElementById('heading').textContent = fmt(data.platformHeading, 1) + '°';
+      document.getElementById('pitch').textContent = fmt(data.platformPitch, 1) + '°';
+      document.getElementById('roll').textContent = fmt(data.platformRoll, 1) + '°';
+
+      const lat = data.sensorLatitude || data.frameCenterLat;
+      const lon = data.sensorLongitude || data.frameCenterLon;
+      if (lat && lon) {
+        updateMap(lat, lon);
+      }
+    }
+
+    // Load demos
+    async function loadDemos() {
+      const res = await fetch('/api/demos');
+      const { demos } = await res.json();
+      const selector = document.getElementById('demoSelector');
+
+      demos.forEach(demo => {
+        const btn = document.createElement('button');
+        btn.className = 'demo-btn';
+        btn.textContent = demo.name;
+        btn.onclick = () => selectDemo(demo);
+        selector.appendChild(btn);
+      });
+
+      if (demos.length > 0) {
+        selectDemo(demos[0]);
+      }
+    }
+
+    // Select demo
+    async function selectDemo(demo) {
+      // Update buttons
+      document.querySelectorAll('.demo-btn').forEach(b => b.classList.remove('active'));
+      event?.target?.classList.add('active');
+
+      currentDemo = demo;
+      klvPackets = [];
+      klvIndex = 0;
+
+      // Load video
+      const video = document.getElementById('videoPlayer');
+      video.src = demo.videoUrl;
+      video.load();
+
+      // Load KLV data
+      if (demo.hasKLV) {
+        const res = await fetch(`/api/demos/${demo.id}/klv`);
+        const data = await res.json();
+        klvPackets = data.packets || [];
+        document.getElementById('klvCounter').textContent = `KLV: 0/${klvPackets.length}`;
+      } else {
+        document.getElementById('klvCounter').textContent = 'No KLV';
+      }
+
+      document.getElementById('statusText').textContent = 'Ready';
+    }
+
+    // Sync KLV with video
+    function syncKLV() {
+      const video = document.getElementById('videoPlayer');
+      const currentTimeMs = video.currentTime * 1000;
+
+      // Find the right KLV packet for current video time
+      while (klvIndex < klvPackets.length - 1 &&
+             klvPackets[klvIndex + 1].relativeTimeMs <= currentTimeMs) {
+        klvIndex++;
+      }
+
+      // Go back if we seeked backwards
+      while (klvIndex > 0 &&
+             klvPackets[klvIndex].relativeTimeMs > currentTimeMs) {
+        klvIndex--;
+      }
+
+      if (klvPackets[klvIndex]) {
+        updateKLV(klvPackets[klvIndex]);
+        document.getElementById('klvCounter').textContent = `KLV: ${klvIndex + 1}/${klvPackets.length}`;
+      }
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      initMap();
+      loadDemos();
+
+      const video = document.getElementById('videoPlayer');
+
+      video.addEventListener('play', () => {
+        document.getElementById('statusText').textContent = 'Playing';
+      });
+
+      video.addEventListener('pause', () => {
+        document.getElementById('statusText').textContent = 'Paused';
+      });
+
+      video.addEventListener('timeupdate', syncKLV);
+      video.addEventListener('seeked', () => {
+        klvIndex = 0; // Reset and let syncKLV find the right position
+        syncKLV();
+      });
+    });
+  </script>
+</body>
+</html>
