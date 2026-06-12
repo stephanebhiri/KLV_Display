@@ -8,6 +8,7 @@ export class FFmpegService extends EventEmitter {
   constructor() {
     super();
     this.process = null;
+    this.hlsProcess = null;
     this.klvBuffer = Buffer.alloc(0);
   }
 
@@ -53,6 +54,11 @@ export class FFmpegService extends EventEmitter {
    * @param {string} outputDir - Directory for HLS segments
    */
   startHLSTranscode(inputPath, outputDir) {
+    // A previous transcoder writing to the same playlist would corrupt it
+    if (this.hlsProcess) {
+      this.hlsProcess.kill('SIGTERM');
+      this.hlsProcess = null;
+    }
     const hlsProcess = spawn('ffmpeg', [
       '-i', inputPath,
       '-map', '0:v',
@@ -76,6 +82,11 @@ export class FFmpegService extends EventEmitter {
       }
     });
 
+    hlsProcess.on('close', () => {
+      if (this.hlsProcess === hlsProcess) this.hlsProcess = null;
+    });
+
+    this.hlsProcess = hlsProcess;
     return hlsProcess;
   }
 
@@ -131,6 +142,10 @@ export class FFmpegService extends EventEmitter {
     if (this.process) {
       this.process.kill('SIGTERM');
       this.process = null;
+    }
+    if (this.hlsProcess) {
+      this.hlsProcess.kill('SIGTERM');
+      this.hlsProcess = null;
     }
   }
 }

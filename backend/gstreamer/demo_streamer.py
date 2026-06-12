@@ -4,6 +4,7 @@ Demo VP8 File Streamer
 Reads pre-encoded VP8 WebM file and streams via WebRTC
 No encoding - just passthrough for minimal CPU usage
 """
+import os
 import sys
 import json
 import asyncio

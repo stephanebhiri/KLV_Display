@@ -508,7 +508,7 @@ function killSimulator() {
   });
 }
 
-const NORMALIZED_DIR = '/Users/stephane/Documents/CV_Stephane_Bhiri/KLV_Display/samples/normalized';
+const NORMALIZED_DIR = process.env.KLV_SAMPLES_DIR || join(__dirname, '../../samples/normalized');
 const SAMPLE_FILES = [
   { id: 'cheyenne', name: 'Cheyenne', file: `${NORMALIZED_DIR}/Cheyenne.ts`, codec: 'h264' },
   { id: 'falls', name: 'Falls', file: `${NORMALIZED_DIR}/Falls.ts`, codec: 'h264' },

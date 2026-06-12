@@ -640,10 +640,13 @@ class WebRTCPipeline:
             answer = GstWebRTC.WebRTCSessionDescription.new(
                 GstWebRTC.WebRTCSDPType.ANSWER, sdp_msg
             )
-            promise = Gst.Promise.new()
+            # Never promise.wait() on the GLib main loop thread: the promise
+            # may need the main loop to resolve, which deadlocks.
+            promise = Gst.Promise.new_with_change_func(
+                lambda _promise, _data: self._log(f"Remote description set for {client_id}"),
+                None
+            )
             webrtcbin.emit("set-remote-description", answer, promise)
-            promise.wait()
-            self._log(f"Remote description set for {client_id}")
 
     def add_ice_candidate(self, client_id: str, candidate: str, sdp_mline_index: int):
         """Add ICE candidate from browser."""
@@ -665,37 +668,37 @@ class WebRTCPipeline:
         """Create offer when negotiation needed."""
         self._log(f"Negotiation needed for {client_id}")
 
-        # Create offer synchronously
-        promise = Gst.Promise.new()
+        # Resolve the offer via a change-func callback (fires on a GStreamer
+        # thread once ready). The previous idle_add + promise.wait() blocked
+        # the GLib main loop on a promise that can need the main loop to
+        # resolve — a deadlock under real WebRTC load.
+        promise = Gst.Promise.new_with_change_func(
+            self._on_offer_created, (client_id, webrtcbin)
+        )
         webrtcbin.emit("create-offer", None, promise)
 
-        # Wait for promise and handle in idle callback to avoid blocking
-        GLib.idle_add(self._handle_offer_promise, promise, client_id, webrtcbin)
-
-    def _handle_offer_promise(self, promise, client_id, webrtcbin):
-        """Handle offer creation result."""
-        # Wait for the promise
-        promise.wait()
+    def _on_offer_created(self, promise, data):
+        """Offer promise resolved (called from a GStreamer thread)."""
+        client_id, webrtcbin = data
 
         if client_id not in self.clients:
-            return False
+            return
 
         reply = promise.get_reply()
         if not reply:
             self._log(f"No reply for offer creation")
-            return False
+            return
 
         offer = reply.get_value("offer")
         if not offer:
             self._log(f"No offer in reply")
-            return False
+            return
 
-        # Set local description
-        promise2 = Gst.Promise.new()
-        webrtcbin.emit("set-local-description", offer, promise2)
-        promise2.wait()
+        # Set local description (fire-and-forget; webrtcbin applies it async)
+        webrtcbin.emit("set-local-description", offer, Gst.Promise.new())
 
-        # Send offer to Node.js
+        # Send offer to Node.js (_send_ipc is already called from GStreamer
+        # threads by the ICE callbacks)
         sdp_text = offer.sdp.as_text()
         self._log(f"Sending offer for {client_id}")
         self._send_ipc({
@@ -703,8 +706,6 @@ class WebRTCPipeline:
             'client_id': client_id,
             'sdp': sdp_text
         })
-
-        return False  # Don't repeat idle callback
 
     def _on_ice_candidate(self, webrtcbin, mline_index, candidate, client_id):
         """Handle new ICE candidate."""

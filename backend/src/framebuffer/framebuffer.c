@@ -244,9 +244,12 @@ static gboolean restart_input_pipeline(gpointer data) {
     /* Stop old input pipeline */
     if (fb->input_pipeline) {
         gst_element_set_state(fb->input_pipeline, GST_STATE_NULL);
+        if (fb->appsink) {
+            gst_object_unref(fb->appsink);
+            fb->appsink = NULL;
+        }
         gst_object_unref(fb->input_pipeline);
         fb->input_pipeline = NULL;
-        fb->appsink = NULL;
     }
 
     /* Create new input pipeline */
@@ -370,6 +373,8 @@ static gboolean create_input_pipeline(FrameBuffer *fb) {
     fb->appsink = gst_bin_get_by_name(GST_BIN(fb->input_pipeline), "sink");
     if (!fb->appsink) {
         g_printerr("[FrameBuffer] Failed to get appsink\n");
+        gst_object_unref(fb->input_pipeline);
+        fb->input_pipeline = NULL;
         return FALSE;
     }
 
@@ -838,6 +843,9 @@ static void framebuffer_free(FrameBuffer *fb) {
     if (fb->current_frame) gst_buffer_unref(fb->current_frame);
     if (fb->current_caps) gst_caps_unref(fb->current_caps);
     if (fb->fallback_frame) gst_buffer_unref(fb->fallback_frame);
+    /* gst_bin_get_by_name() returned owned refs */
+    if (fb->appsink) gst_object_unref(fb->appsink);
+    if (fb->appsrc) gst_object_unref(fb->appsrc);
     if (fb->input_pipeline) gst_object_unref(fb->input_pipeline);
     if (fb->output_pipeline) gst_object_unref(fb->output_pipeline);
     g_free(fb->output_host);
