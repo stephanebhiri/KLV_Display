@@ -24,23 +24,49 @@ const DEMOS = {
   truck: { name: 'Truck', folder: 'Truck', hasKLV: true }
 };
 
-// Load KLV data
+// Normalize dual-sensor klv.json ({ sensors: { name: { packets } } })
+// into the flat { duration, packetCount, packets } shape used by the
+// WebSocket streaming path, tagging each packet with its sensor.
+// The HTTP API keeps serving the raw shape (the client-sync frontend
+// handles dualSensor itself).
+function normalizeKLV(raw) {
+  if (!raw.dualSensor || !raw.sensors) return raw;
+  const packets = [];
+  for (const [sensorKey, sensor] of Object.entries(raw.sensors)) {
+    for (const p of sensor.packets || []) {
+      packets.push({ ...p, _sensor: p.imageSourceSensor || sensorKey });
+    }
+  }
+  packets.sort((a, b) => a.relativeTimeMs - b.relativeTimeMs);
+  return {
+    source: raw.source,
+    duration: packets.length ? packets[packets.length - 1].relativeTimeMs : 0,
+    packetCount: packets.length,
+    packets
+  };
+}
+
+// Load KLV data: klvRaw served over HTTP, klvData (flat) streamed over WS
+const klvRaw = {};
 const klvData = {};
 for (const [id, demo] of Object.entries(DEMOS)) {
   const klvPath = join(ASSETS_DIR, demo.folder, 'klv.json');
   if (existsSync(klvPath)) {
     try {
-      klvData[id] = JSON.parse(readFileSync(klvPath, 'utf-8'));
-      if (klvData[id].dualSensor) {
-        const sensorNames = Object.keys(klvData[id].sensors);
-        console.log(`Loaded dual sensor KLV for ${demo.name}: ${sensorNames.join(', ')}`);
+      const raw = JSON.parse(readFileSync(klvPath, 'utf-8'));
+      const flat = normalizeKLV(raw);
+      if (flat.packets?.length) {
+        klvRaw[id] = raw;
+        klvData[id] = flat;
+        console.log(`Loaded ${flat.packetCount} KLV packets for ${demo.name}${raw.dualSensor ? ` (dual sensor: ${Object.keys(raw.sensors).join(', ')})` : ''}`);
       } else {
-        console.log(`Loaded ${klvData[id].packetCount || klvData[id].packets?.length} KLV packets for ${demo.name}`);
+        console.log(`No KLV packets for ${demo.name}`);
       }
     } catch (err) {
       console.log(`No KLV for ${demo.name}`);
     }
   }
+  demo.hasKLV = Boolean(klvData[id]?.packets?.length);
 }
 
 const app = express();
@@ -67,13 +93,13 @@ app.get('/api/demos', (req, res) => {
   res.json({ demos });
 });
 
-// API: get KLV data for a demo
+// API: get KLV data for a demo (raw shape, incl. dualSensor structure)
 app.get('/api/demos/:id/klv', (req, res) => {
   const { id } = req.params;
-  if (!klvData[id]) {
+  if (!klvRaw[id]) {
     return res.status(404).json({ error: 'KLV not found' });
   }
-  res.json(klvData[id]);
+  res.json(klvRaw[id]);
 });
 
 // API: status
@@ -86,14 +112,50 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// Format KLV packet for frontend (structured format)
+// Geometry helpers (sensor -> frame center)
+const toRad = (d) => (d * Math.PI) / 180;
+const toDeg = (r) => (r * 180) / Math.PI;
+const EARTH_RADIUS_M = 6371000;
+
+function bearingDeg(lat1, lon1, lat2, lon2) {
+  const p1 = toRad(lat1), p2 = toRad(lat2), dl = toRad(lon2 - lon1);
+  const y = Math.sin(dl) * Math.cos(p2);
+  const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
+function groundDistanceM(lat1, lon1, lat2, lon2) {
+  const p1 = toRad(lat1), p2 = toRad(lat2);
+  const dp = toRad(lat2 - lat1), dl = toRad(lon2 - lon1);
+  const a = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+  return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(a));
+}
+
+// Format KLV packet for frontend (structured format).
+// Prefers native MISB fields (tag 18 azimuth, tag 21 slant range); falls
+// back to sensor -> frame center geometry when an older klv.json lacks them.
 function formatKLVForFrontend(pkt, sensorName) {
+  let relativeAzimuth = 0;
+  let slantRangeM = 1500;
+  const hasGeometry = [pkt.sensorLatitude, pkt.sensorLongitude, pkt.frameCenterLat, pkt.frameCenterLon]
+    .every((v) => typeof v === 'number' && isFinite(v));
+  if (typeof pkt.sensorRelativeAzimuth === 'number') {
+    relativeAzimuth = pkt.sensorRelativeAzimuth;
+    if (typeof pkt.slantRange === 'number') slantRangeM = Math.round(pkt.slantRange);
+  } else if (hasGeometry) {
+    const bearing = bearingDeg(pkt.sensorLatitude, pkt.sensorLongitude, pkt.frameCenterLat, pkt.frameCenterLon);
+    relativeAzimuth = (bearing - (pkt.platformHeading || 0) + 360) % 360;
+    const ground = groundDistanceM(pkt.sensorLatitude, pkt.sensorLongitude, pkt.frameCenterLat, pkt.frameCenterLon);
+    const dAlt = (pkt.sensorAltitude ?? 0) - (pkt.frameCenterElev ?? 0);
+    slantRangeM = Math.round(Math.sqrt(ground * ground + dAlt * dAlt));
+  }
+
   return {
     sensor: {
       latitude: pkt.sensorLatitude,
       longitude: pkt.sensorLongitude,
       altitude: pkt.sensorAltitude,
-      azimuth: 0, // Relative azimuth (0 = forward)
+      azimuth: relativeAzimuth, // Relative to platform heading
       hfov: pkt.horizontalFOV,
       vfov: pkt.verticalFOV
     },
@@ -106,9 +168,9 @@ function formatKLVForFrontend(pkt, sensorName) {
       latitude: pkt.frameCenterLat,
       longitude: pkt.frameCenterLon,
       elevation: pkt.frameCenterElev,
-      slantRangeM: 1500 // Estimated slant range
+      slantRangeM
     },
-    unixTimestamp: pkt.timestamp / 1000,
+    unixTimestamp: typeof pkt.timestamp === 'number' ? pkt.timestamp / 1000 : null,
     _sensorName: sensorName
   };
 }
@@ -179,11 +241,12 @@ wss.on('connection', (ws) => {
           while (client.index < client.demo.packets.length &&
                  client.demo.packets[client.index].relativeTimeMs <= elapsed) {
             const pkt = client.demo.packets[client.index];
+            const sensorLabel = pkt._sensor || client.demoName;
             ws.send(JSON.stringify({
               type: 'klv',
-              sensorId: 'demo-sensor',
-              sensorName: client.demoName,
-              data: formatKLVForFrontend(pkt, client.demoName)
+              sensorId: pkt._sensor || 'demo-sensor',
+              sensorName: sensorLabel,
+              data: formatKLVForFrontend(pkt, sensorLabel)
             }));
             client.index++;
           }
