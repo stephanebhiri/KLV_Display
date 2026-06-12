@@ -126,7 +126,7 @@ ffmpeg -re -i your-stanag-file.ts -c copy -f mpegts udp://localhost:5000
 
 ## Demo
 
-**Live Demo:** http://141.253.115.214
+**Live Demo:** http://146.59.239.27:3001
 
 Pre-recorded STANAG 4609 sample streams with synchronized KLV metadata.
 
